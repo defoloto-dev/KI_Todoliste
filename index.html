@@ -46,6 +46,13 @@
     .legend{display:flex;align-items:center;gap:8px}
     .legend .dot{width:14px;height:14px;border-radius:3px}
     .percentbar{display:flex;gap:0;height:22px;background:#eee;border-radius:6px;overflow:hidden}
+
+    /* Neu: selektierte Priorität */
+    .prio-selected {
+      border: 2px solid var(--primary);
+      background: var(--primary) !important;
+      color: #fff !important;
+    }
   </style>
 </head>
 <body>
@@ -65,11 +72,32 @@
         <button id="btnShowAdd" class="primary">➕ Neue Aufgabe</button>
       </div>
       <div id="expandedAdd" style="display:none" class="card">
+        <!-- Grid: Task, Dauer, Kategorie (jetzt Dropdown) + Zeit -->
         <div class="grid">
           <input id="inpTask" class="compact" placeholder="Hauptaufgabe…" />
           <input id="inpDuration" class="compact" placeholder="Dauer (Min)" inputmode="numeric" />
-          <input id="inpCategory" class="compact" placeholder="Kategorie (z. B. Arbeit, Privat)" />
+          <!-- Kategorie: Dropdown mit Optionen + custom input (ausgeblendet standardmäßig) -->
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="inpCategory" class="compact" style="flex:1">
+              <option value="">Kategorie wählen…</option>
+              <option value="Arbeit">Arbeit</option>
+              <option value="Hobby">Hobby</option>
+              <option value="Freizeit">Freizeit</option>
+              <option value="Lernen">Lernen</option>
+              <option value="Sport">Sport</option>
+              <option value="Schlafen">Schlafen</option>
+              <option value="custom">Eigene Eingabe…</option>
+            </select>
+            <input id="inpCategoryCustom" class="compact" placeholder="Eigene Kategorie" style="display:none;min-width:160px" />
+          </div>
         </div>
+
+        <!-- Neu: Eingabefeld für Startzeit (optional) -->
+        <div class="grid" style="margin-top:8px;grid-template-columns:1fr auto">
+          <input id="inpTime" type="time" class="compact" placeholder="Startzeit (optional)" />
+          <div style="align-self:center" class="muted">optional</div>
+        </div>
+
         <div id="prioRow" class="row" style="margin-top:8px">
           <button data-prio="hoch" class="warn">🔥 Hoch</button>
           <button data-prio="mittel">⚖️ Mittel</button>
@@ -314,6 +342,12 @@
       $('prioRow').style.display = state.settings.prioritiesEnabled && state.showAddForm ? '' : 'none';
       $('prioSel').textContent = `aktuell: ${state.taskPriority}`;
 
+      // Ensure prio buttons reflect selected priority (class prio-selected)
+      document.querySelectorAll('#prioRow button[data-prio]').forEach(b=>{
+        if(b.getAttribute('data-prio') === state.taskPriority) b.classList.add('prio-selected');
+        else b.classList.remove('prio-selected');
+      });
+
       // Selected subtask area
       if(state.selectedTaskIndex!==null){
         $('subtaskArea').style.display = '';
@@ -350,6 +384,12 @@
         title.append(doneBox, document.createTextNode(' '));
         const pr = `[${item.priority||'mittel'}] `;
         title.append(document.createTextNode(pr+item.text+' ('), durLink, document.createTextNode(')'));
+
+        // Neu: Falls Zeit vorhanden, anzeigen (z. B. ⏰ 09:30)
+        if(item.time){
+          title.append(document.createTextNode(` ⏰ ${item.time}`));
+        }
+
         left.appendChild(title);
 
         const catRow = document.createElement('div'); catRow.className='kbadge';
@@ -438,28 +478,66 @@
     // Add form handlers
     // -----------------------------
     $('btnShowAdd').addEventListener('click',()=>{ state.showAddForm=true; render(); });
-    $('btnCancelAdd').addEventListener('click',()=>{ state.showAddForm=false; $('inpTask').value=''; $('inpDuration').value=''; $('inpCategory').value=''; state.taskPriority='mittel'; render(); });
+
+    $('btnCancelAdd').addEventListener('click',()=>{
+      state.showAddForm=false;
+      $('inpTask').value=''; $('inpDuration').value=''; $('inpCategory').value=''; $('inpCategoryCustom').value=''; $('inpCategoryCustom').style.display='none';
+      $('inpTime').value='';
+      state.taskPriority='mittel';
+      render();
+    });
+
+    // Prioritäts-Buttons: beim Klick Auswahl setzen + visuelle Markierung
     document.querySelectorAll('#prioRow button[data-prio]').forEach(btn=>{
       btn.addEventListener('click',()=>{
         state.taskPriority = btn.getAttribute('data-prio');
+        // entferne alte Markierung, setze neue
+        document.querySelectorAll('#prioRow button[data-prio]').forEach(b=>b.classList.remove('prio-selected'));
+        btn.classList.add('prio-selected');
         render();
       });
     });
+
+    // Kategorie dropdown: zeige/verstecke custom input
+    $('inpCategory').addEventListener('change',()=>{
+      if($('inpCategory').value==='custom'){
+        $('inpCategoryCustom').style.display='';
+        $('inpCategoryCustom').focus();
+      }else{
+        $('inpCategoryCustom').style.display='none';
+        $('inpCategoryCustom').value='';
+      }
+    });
+
     $('btnAdd').addEventListener('click',()=>{
       const text = $('inpTask').value.trim();
       if(!text){ alert('Bitte gib eine Hauptaufgabe ein.'); return; }
       const duration = parseInt(($('inpDuration').value||'').trim(),10);
-      const category = ($('inpCategory').value||'Ohne Kategorie').trim() || 'Ohne Kategorie';
+
+      // Kategorie: wenn 'custom' gewählt, verwende inpCategoryCustom
+      let category = ($('inpCategory').value||'').trim();
+      if(category==='custom'){
+        category = ($('inpCategoryCustom').value||'Ohne Kategorie').trim() || 'Ohne Kategorie';
+      }else if(!category){
+        category = 'Ohne Kategorie';
+      }
+
       const color = getCatColor(category);
+
+      // Zeitfeld (optional)
+      const time = ($('inpTime').value||'').trim();
       const newTodo = {
         text, done:false, subtasks:[],
         duration: Number.isFinite(duration) && duration>0 ? duration : 5,
-        priority: state.taskPriority, category, color
+        priority: state.taskPriority, category, color,
+        time: time || null
       };
       const order = { hoch:1, mittel:2, niedrig:3 };
       const next = [...state.todos, newTodo].sort((a,b)=>(order[a.priority||'mittel']||2)-(order[b.priority||'mittel']||2));
       state.todos = next; cleanCategories(next);
-      $('inpTask').value=''; $('inpDuration').value=''; $('inpCategory').value='';
+      // Reset form fields
+      $('inpTask').value=''; $('inpDuration').value=''; $('inpCategory').value=''; $('inpCategoryCustom').value=''; $('inpCategoryCustom').style.display='none';
+      $('inpTime').value='';
       state.taskPriority='mittel'; state.showAddForm=false;
       saveAndRender();
     });
@@ -685,7 +763,7 @@
           body: JSON.stringify({
             model,
             messages:[
-              {role:'system', content:'Du bist ein Assistent, der aus Text eine ToDo-Liste mit Haupt- und Unteraufgaben generiert. Antworte ausschließlich mit einem JSON-Array im Format [{text: string, done: false, subtasks: [{text:string, done:false}], priority?: "hoch"|"mittel"|"niedrig", duration?: number, category?: string}].'},
+              {role:'system', content:'Du bist ein Assistent, der aus Text eine ToDo-Liste mit Haupt- und Unteraufgaben generiert. Antworte ausschließlich mit einem JSON-Array im Format [{text: string, done: false, subtasks: [{text:string, done:false}], priority?: "hoch"|"mittel"|"niedrig", duration?: number, category?: string, time?: string}].'},
               {role:'user', content: prompt}
             ],
             temperature:0.7
@@ -703,6 +781,7 @@
           const cname = (t.category||'Ohne Kategorie').trim()||'Ohne Kategorie';
           n.category = cname;
           n.color = state.categories[cname] || getCatColor(cname);
+          n.time = t.time || null;
           return n;
         });
         state.coins = Math.max(0, state.coins-1);
