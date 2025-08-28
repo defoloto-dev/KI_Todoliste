@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>ToDo + Timeline (Web)</title>
+  <title>ToDo + Timeline (Web) — mit Lineal</title>
   <style>
     :root{
       --bg:#fff;--text:#111;--muted:#666;--border:#ccc;--primary:#0a66c2;--danger:#c62828;--warn:#e69500;--ok:#2e7d32;
@@ -46,13 +46,91 @@
     .legend{display:flex;align-items:center;gap:8px}
     .legend .dot{width:14px;height:14px;border-radius:3px}
     .percentbar{display:flex;gap:0;height:22px;background:#eee;border-radius:6px;overflow:hidden}
-
     /* Neu: selektierte Priorität */
     .prio-selected {
       border: 2px solid var(--primary);
       background: var(--primary) !important;
       color: #fff !important;
     }
+
+    /* Lineal / Tagesansicht */
+    .lineal-wrapper { width:420px; max-width:92vw; }
+    .lineal-container {
+      position:relative;
+      border:1px solid var(--border);
+      background:linear-gradient(#fff,#fbfbfb);
+      height: 480px; /* sichtbarer Bereich (wird scrollbar) */
+      overflow-y:auto;
+      box-sizing:border-box;
+      padding-left:56px; /* Platz für Zeitlabels */
+    }
+    .lineal-inner {
+      position:relative;
+      width:100%;
+      box-sizing:border-box;
+    }
+    .hour-line {
+      position:absolute;
+      left:0;
+      right:0;
+      height:1px;
+      background:#e6e6e6;
+    }
+    .hour-label {
+      position:absolute;
+      left:8px;
+      transform:translateY(-50%);
+      font-size:12px;
+      color:var(--muted);
+      width:48px;
+      text-align:left;
+    }
+    .time-marker {
+      position:absolute;
+      left:0;
+      right:0;
+      height:4px;
+      background:darkred;
+      z-index:30;
+      box-shadow:0 0 6px rgba(0,0,0,.25);
+    }
+    .lineal-block {
+      position:absolute;
+      left:64px;
+      right:8px;
+      border-radius:6px;
+      padding:4px 6px;
+      color:#fff;
+      font-size:12px;
+      box-sizing:border-box;
+      z-index:20;
+      overflow:hidden;
+      display:flex;
+      align-items:center;
+      gap:6px;
+    }
+    .lineal-timeline-block {
+      position:absolute;
+      left:8px;
+      right:8px;
+      border-radius:6px;
+      padding:6px 8px;
+      color:#fff;
+      font-size:13px;
+      box-sizing:border-box;
+      z-index:18;
+      background:#333;
+      opacity:0.95;
+      display:flex;
+      align-items:center;
+    }
+    .lineal-empty {
+      padding:20px;text-align:center;color:var(--muted);
+    }
+
+    /* kleine Buttons im Dialog */
+    .lineal-controls { display:flex; gap:8px; align-items:center; margin-top:8px; justify-content:flex-end; }
+    .small { height:36px; padding:0 10px; font-size:14px; border-radius:8px; }
   </style>
 </head>
 <body>
@@ -61,6 +139,8 @@
       <div class="row" style="gap:12px">
         <button id="btnSettings">⚙️ Einstellungen</button>
         <button id="btnStats" class="ghost" title="Statistiken">📊</button>
+        <!-- Neu: Lineal Button -->
+        <button id="btnLineal" class="ghost" title="Tagesansicht (Lineal)">📏</button>
       </div>
       <div class="row">
         <span id="coinLabel" class="coin">💰 0</span>
@@ -69,7 +149,7 @@
 
     <section class="section" id="addArea">
       <div id="collapsedAdd">
-        <button id="btnShowAdd" class="primary">➕ Neue Aufgabe</button>
+        <button id="btnShowAdd" class="primary">✚ Neue Aufgabe</button>
       </div>
       <div id="expandedAdd" style="display:none" class="card">
         <!-- Grid: Task, Dauer, Kategorie (jetzt Dropdown) + Zeit -->
@@ -100,7 +180,7 @@
 
         <div id="prioRow" class="row" style="margin-top:8px">
           <button data-prio="hoch" class="warn">🔥 Hoch</button>
-          <button data-prio="mittel">⚖️ Mittel</button>
+          <button data-prio="mittel">🔷 Mittel</button>
           <button data-prio="niedrig" class="">🍃 Niedrig</button>
           <span id="prioSel" class="chip">aktuell: mittel</span>
         </div>
@@ -160,8 +240,8 @@
       <div class="divider"></div>
 
       <div class="row" style="gap:8px;flex-wrap:wrap">
-        <button id="btnExport" class="ok">⬆️ Daten exportieren</button>
-        <button id="btnImport" class="warn">⬇️ Daten importieren</button>
+        <button id="btnExport" class="ok">💾 Daten exportieren</button>
+        <button id="btnImport" class="warn">📥 Daten importieren</button>
         <button id="btnBuyCoins">100 Coins kaufen (Demo)</button>
       </div>
 
@@ -252,6 +332,23 @@
     </form>
   </dialog>
 
+  <!-- Lineal / Tagesansicht Dialog -->
+  <dialog id="dlgLineal">
+    <form method="dialog" class="card lineal-wrapper" style="border:none;box-shadow:none;padding:12px">
+      <h3 style="margin:0 0 10px">Tages-Plan (0:00 — 24:00)</h3>
+      <div id="linealContainer" class="lineal-container" aria-label="Tages-Plan">
+        <div id="linealInner" class="lineal-inner"></div>
+      </div>
+
+      <div class="lineal-controls">
+        <!-- @-Button: fügt verbleibende Timeline-Wartezeit als Block ein -->
+        <button id="btnAddTimelineBlock" class="small primary" title="@ - verbleibende Timeline-Wartezeit einfügen">@ Timeline</button>
+        <button id="btnRemoveTimelineBlock" class="small" title="Timeline-Block entfernen">✖ Entfernen</button>
+        <button id="btnCloseLineal" class="small danger">Schließen</button>
+      </div>
+    </form>
+  </dialog>
+
   <script>
     // -----------------------------
     // Utilities
@@ -273,12 +370,15 @@
       timelineTasks: [],
       currentTimelineIndex: 0,
       isTimelineRunning: false,
-      timeLeft: 0,
+      timeLeft: 0, // Sekunden verbleibend für aktuellen Timeline-Task
       categories: {},
 
       // UI form helpers
       showAddForm: false,
-      taskPriority: 'mittel'
+      taskPriority: 'mittel',
+
+      // Lineal-specific
+      linealTimelineBlock: null // { startMin: float, endMin: float } in Minuten (0..1440)
     };
 
     // -----------------------------
@@ -290,7 +390,8 @@
         settings: state.settings,
         coins: state.coins,
         timelineTasks: state.timelineTasks,
-        categories: state.categories
+        categories: state.categories,
+        linealTimelineBlock: state.linealTimelineBlock
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
     }
@@ -304,6 +405,7 @@
         if(typeof s.coins === 'number') state.coins = s.coins;
         if(s.timelineTasks) state.timelineTasks = s.timelineTasks;
         if(s.categories) state.categories = s.categories;
+        if(s.linealTimelineBlock) state.linealTimelineBlock = s.linealTimelineBlock;
       }catch(err){ console.error('Load failed', err); }
     }
 
@@ -409,7 +511,7 @@
           actions.appendChild(brain);
         }
 
-        const plus = document.createElement('button'); plus.textContent='➕';
+        const plus = document.createElement('button'); plus.textContent='✚';
         plus.addEventListener('click',()=>{
           state.selectedTaskIndex = (state.selectedTaskIndex===index ? null : index);
           render();
@@ -586,7 +688,7 @@
       const task = state.todos[index];
       if(task.duration && task.duration>0){
         state.timelineTasks.push(task);
-        render();
+        saveAndRender();
       }else{
         alert('Diese Aufgabe hat keine gültige Dauer.');
       }
@@ -604,7 +706,7 @@
       render();
     });
     $('btnClearTimeline').addEventListener('click',()=>{
-      state.timelineTasks=[]; state.currentTimelineIndex=0; state.isTimelineRunning=false; state.timeLeft=0; render();
+      state.timelineTasks=[]; state.currentTimelineIndex=0; state.isTimelineRunning=false; state.timeLeft=0; saveAndRender();
     });
 
     function formatTime(sec){
@@ -617,13 +719,13 @@
     // -----------------------------
     $('btnSettings').addEventListener('click',()=> $('dlgSettings').showModal());
     $('btnCloseSettings').addEventListener('click',()=> $('dlgSettings').close());
-    $('swPrio').addEventListener('change',e=>{ state.settings.prioritiesEnabled = e.target.checked; render(); });
-    $('swTimeline').addEventListener('change',e=>{ state.settings.timelineEnabled = e.target.checked; render(); });
+    $('swPrio').addEventListener('change',e=>{ state.settings.prioritiesEnabled = e.target.checked; saveAndRender(); });
+    $('swTimeline').addEventListener('change',e=>{ state.settings.timelineEnabled = e.target.checked; saveAndRender(); });
     $('swAI').addEventListener('change',e=>{
       if(!e.target.checked){
-        state.settings.aiEnabled=false; render(); return;
+        state.settings.aiEnabled=false; saveAndRender(); return;
       }
-      if(state.coins>0){ state.settings.aiEnabled=true; render(); }
+      if(state.coins>0){ state.settings.aiEnabled=true; saveAndRender(); }
       else{
         alert('Du benötigst Coins, um das KI-Feature zu aktivieren.');
         e.target.checked=false;
@@ -638,7 +740,7 @@
         version:1.0,
         exportedAt:new Date().toISOString(),
         data:{
-          todos:state.todos, settings:state.settings, coins:state.coins, timelineTasks:state.timelineTasks, categories:state.categories
+          todos:state.todos, settings:state.settings, coins:state.coins, timelineTasks:state.timelineTasks, categories:state.categories, linealTimelineBlock: state.linealTimelineBlock
         }
       };
       const blob = new Blob([JSON.stringify(payload,null,2)], {type:'application/json'});
@@ -660,6 +762,7 @@
         state.coins = parsed.data.coins||0;
         state.timelineTasks = parsed.data.timelineTasks||[];
         state.categories = parsed.data.categories||{};
+        state.linealTimelineBlock = parsed.data.linealTimelineBlock || null;
         cleanCategories();
         alert('Die Daten wurden erfolgreich importiert.');
         $('dlgImport').close(); $('importData').value='';
@@ -694,7 +797,7 @@
       const {doneTime,todoTime,categoryPercentages}=calculateStats();
       const root = $('statsBody'); root.innerHTML='';
       const t1 = document.createElement('div'); t1.innerHTML=`⏳ Kumulierte Zeit unerledigt: <strong>${Math.round(todoTime)} Min</strong>`;
-      const t2 = document.createElement('div'); t2.style.marginBottom='10px'; t2.innerHTML=`✅ Kumulierte Zeit erledigt: <strong>${Math.round(doneTime)} Min</strong>`;
+      const t2 = document.createElement('div'); t2.style.marginBottom='10px'; t2.innerHTML=`⭐ Kumulierte Zeit erledigt: <strong>${Math.round(doneTime)} Min</strong>`;
       root.append(t1,t2);
 
       const label = document.createElement('div'); label.style.fontWeight='600'; label.style.marginBottom='6px';
@@ -848,6 +951,153 @@ Antwort ausschließlich als JSON-Array im Format [{text: string, done: false}].`
       }finally{
         $('subAIBusy').textContent='';
       }
+    });
+
+    // -----------------------------
+    // Lineal / Tagesansicht Implementation
+    // -----------------------------
+    // Skalierung: PIXELS_PER_MINUTE : wieviel px = 1 Minute. 1px/min ergibt 1440px Gesamt.
+    const PIXELS_PER_MIN = 1; // 1px = 1 Minute → Gesamthöhe 1440px
+    const TOTAL_MINUTES = 24 * 60;
+    function minutesToPx(min){ return min * PIXELS_PER_MIN; }
+    function pxToMinutes(px){ return px / PIXELS_PER_MIN; }
+
+    function formatTimeOfDay(mins){
+      const h = Math.floor(mins/60)%24;
+      const m = Math.floor(mins%60);
+      return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+    }
+
+    function renderLineal(){
+      const inner = $('linealInner');
+      inner.innerHTML = '';
+      // Set inner height
+      const totalHeight = minutesToPx(TOTAL_MINUTES);
+      inner.style.height = totalHeight + 'px';
+
+      // Stundenmarken (0..24)
+      for(let h=0; h<=24; h++){
+        const minute = h*60;
+        const y = minutesToPx(minute);
+        const hr = document.createElement('div');
+        hr.className='hour-line';
+        hr.style.top = y + 'px';
+        hr.style.background = (h%6===0) ? '#d9d9d9' : '#eee';
+        inner.appendChild(hr);
+
+        if(h<24){
+          const label = document.createElement('div');
+          label.className='hour-label';
+          label.style.top = y + 'px';
+          label.textContent = `${String(h).padStart(2,'0')}:00`;
+          inner.appendChild(label);
+        }
+      }
+
+      // Aufgaben mit Zeit -> Blöcke rendern
+      state.todos.forEach(task=>{
+        if(!task.time) return;
+        const parts = task.time.split(':').map(s=>parseInt(s,10));
+        if(parts.length<2 || Number.isNaN(parts[0]) || Number.isNaN(parts[1])) return;
+        const startMin = clamp(parts[0]*60 + parts[1], 0, TOTAL_MINUTES);
+        const dur = Number.isFinite(task.duration) && task.duration>0 ? task.duration : 5;
+        const endMin = clamp(startMin + dur, 0, TOTAL_MINUTES);
+
+        // Create block
+        const block = document.createElement('div');
+        block.className = 'lineal-block';
+        block.style.top = minutesToPx(startMin) + 'px';
+        block.style.height = Math.max(8, minutesToPx(endMin - startMin)) + 'px'; // min height for visibility
+        block.style.background = task.color || getCatColor(task.category);
+        block.textContent = task.text;
+        block.title = `${task.text} — ${formatTimeOfDay(startMin)} → ${formatTimeOfDay(endMin)} (${dur} Min)`;
+        inner.appendChild(block);
+      });
+
+      // Timeline-Block falls vorhanden
+      if(state.linealTimelineBlock){
+        const b = state.linealTimelineBlock;
+        const startMin = clamp(b.startMin, 0, TOTAL_MINUTES);
+        const endMin = clamp(b.endMin, 0, TOTAL_MINUTES);
+        if(endMin > startMin){
+          const tblock = document.createElement('div');
+          tblock.className = 'lineal-timeline-block';
+          tblock.style.top = minutesToPx(startMin) + 'px';
+          tblock.style.height = Math.max(10, minutesToPx(endMin - startMin)) + 'px';
+          tblock.textContent = `Timeline — ${formatTimeOfDay(startMin)} → ${formatTimeOfDay(endMin)} (${Math.round((endMin-startMin))} Min)`;
+          tblock.title = `Timeline: ${formatTimeOfDay(startMin)} - ${formatTimeOfDay(endMin)}`;
+          inner.appendChild(tblock);
+        }
+      }
+
+      // Zeitmarker (aktuelle Zeit)
+      const now = new Date();
+      const nowMin = now.getHours()*60 + now.getMinutes() + now.getSeconds()/60;
+      const marker = document.createElement('div');
+      marker.className = 'time-marker';
+      marker.style.top = minutesToPx(nowMin) + 'px';
+      marker.style.height = '4px';
+      marker.style.background = 'darkred';
+      inner.appendChild(marker);
+    }
+
+    // Öffnen / Schließen Dialog & Interval für Update
+    let linealInterval = null;
+    $('btnLineal').addEventListener('click',()=>{
+      renderLineal();
+      $('dlgLineal').showModal();
+      // Scroll to current time (zentriert)
+      setTimeout(()=> {
+        const container = $('linealContainer');
+        const now = new Date();
+        const nowMin = now.getHours()*60 + now.getMinutes();
+        const targetPx = Math.max(0, minutesToPx(nowMin) - container.clientHeight/2);
+        container.scrollTop = targetPx;
+      },50);
+
+      // Start regelmäßiges Update (jede 15 Sekunden)
+      if(linealInterval!==null) clearInterval(linealInterval);
+      linealInterval = setInterval(()=>{
+        // nur neu rendern, wenn Dialog offen
+        if($('dlgLineal').open) renderLineal();
+      },15000);
+    });
+    $('btnCloseLineal').addEventListener('click',()=> {
+      $('dlgLineal').close();
+      if(linealInterval!==null){ clearInterval(linealInterval); linealInterval=null; }
+    });
+
+    // @-Button: verbleibende Zeit der Timeline-Warteschlange summieren und als Block hinzufügen
+    $('btnAddTimelineBlock').addEventListener('click',()=>{
+      // Berechne verbleibende Zeit in Sekunden:
+      let remainingSeconds = 0;
+      if(state.timelineTasks && state.timelineTasks.length>0){
+        // Aktuelles Task-Restzeit (in Sekunden)
+        remainingSeconds += Number.isFinite(state.timeLeft) ? state.timeLeft : 0;
+        // Zeit aller nachfolgenden Tasks (Dauer in Minuten -> *60)
+        for(let i = state.currentTimelineIndex + 1; i < state.timelineTasks.length; i++){
+          const t = state.timelineTasks[i];
+          const d = Number.isFinite(t.duration) ? t.duration : 0;
+          remainingSeconds += d * 60;
+        }
+      }
+      if(remainingSeconds <= 0){
+        alert('Keine verbleibende Zeit in der Timeline.');
+        return;
+      }
+      const now = new Date();
+      const startMin = now.getHours()*60 + now.getMinutes() + now.getSeconds()/60;
+      const endMin = startMin + (remainingSeconds / 60);
+      state.linealTimelineBlock = { startMin, endMin };
+      saveAndRender();
+      renderLineal();
+      alert(`Timeline-Block hinzugefügt (${Math.round(remainingSeconds/60)} Min).`);
+    });
+
+    $('btnRemoveTimelineBlock').addEventListener('click',()=>{
+      state.linealTimelineBlock = null;
+      saveAndRender();
+      renderLineal();
     });
 
     // -----------------------------
